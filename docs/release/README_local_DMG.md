@@ -1,182 +1,132 @@
-# **__APP_NAME__** 公証付き DMG 作成手順
+# **__APP_NAME__** ローカルでの DMG 作成 & 公証
 
-__APP_NAME__ をローカル環境でビルドし、公証済み DMG を得るまでの必須コマンドを順番に記載します。`README.md` と記述を揃え、以下のコマンド列を上から順に実行すれば DMG 作成が完了します。
+このテンプレートでは、DMG 作成と公証に必要な設定をリポジトリ直下の `.env` に寄せます。`.env.example` をコピーして各値を埋めれば、`Scripts/release_dmg.zsh` だけで Release ビルドから公証済み DMG の検証までを実行できます。
 
 ## 前提条件
 
 - macOS 13 以降で Xcode（Command Line Tools を含む）がインストール済み
 - Apple Developer Program に加入し、Developer ID Application 証明書をキーチェーンに追加済み
-- Apple ID 用のアプリ用パスワードを取得済み（notarytool の Apple ID 認証に使用）
-- Homebrew が導入済み（`/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"` で導入可）
-
-## STEP0: 依存ツールと環境変数
-
-1. create-dmg を導入（既に導入済みでもそのまま実行可）
-   ```bash
-   brew install create-dmg
-   ```
-2. 以降のコマンドで使う環境変数を定義（<> を自身の値に置き換え）
-   ```bash
-   export PROJECT_ROOT="/Users/workSpace/__APP_NAME__"
-   export APP_NAME="__APP_NAME__"
-   export BUILD_DIR="$PROJECT_ROOT/build"
-   export APP_PATH="$BUILD_DIR/Build/Products/Release/${APP_NAME}.app"
-   export DIST_DIR="$PROJECT_ROOT/dist"
-   export DEVELOPER_IDENTITY="Developer ID Application: <YOUR NAME> (<TEAM ID>)"
-   export TEAM_ID="<TEAM ID>"
-   export NOTARY_APPLE_ID="<apple-id@example.com>"
-   export NOTARY_APP_PASSWORD="<app-specific-password>"
-   export NOTARY_TEAM_ID="$TEAM_ID"
-   ```
-   任意で `export NOTARY_KEYCHAIN_PROFILE="__APP_NAME__Notary"` を定義しておくと、後段で keychain profile 版のコマンドに流用できます。
-
-## STEP1: プロジェクトを整える
+- Apple ID 用のアプリ用パスワード、または `notarytool` の keychain profile を用意済み
+- `create-dmg` がインストール済み
 
 ```bash
-cd "$PROJECT_ROOT"
-xcodegen generate
+brew install create-dmg
 ```
-`xcodegen generate` は既存の `__APP_NAME__.xcodeproj` があっても安全に再実行できます。
 
-## STEP2: Release ビルドを作成
+## 0) `.env` を用意する
 
 ```bash
-xcodebuild \
-  -scheme "$APP_NAME" \
-  -configuration Release \
-  -derivedDataPath "$BUILD_DIR" \
-  CODE_SIGN_IDENTITY="$DEVELOPER_IDENTITY" \
-  DEVELOPMENT_TEAM="$TEAM_ID" \
-  CODE_SIGN_STYLE=Manual \
-  ENABLE_HARDENED_RUNTIME=YES \
-  OTHER_CODE_SIGN_FLAGS="--timestamp"
+cp .env.example .env
 ```
-成功すると `build/Build/Products/Release/__APP_NAME__.app` が生成されます。
 
-## STEP3: Developer ID 署名と検証
+最低限、以下を自分の環境に合わせて設定してください。
+
+- `RELEASE_SCHEME`
+- `CODESIGN_IDENTITY`
+- `CODESIGN_ENTITLEMENTS`（entitlements がないアプリでは空）
+- `NOTARY_APPLE_ID` / `NOTARY_TEAM_ID` / `NOTARY_APP_PASSWORD`（Apple ID 認証を `.env` に直接置く場合）
+- `NOTARY_PROFILE`（keychain profile を使う場合）
+
+`.env` は shell で `source` できる書式を前提にしているため、値に空白が入る場合は必ずクオートしてください。`.env` は `.gitignore` 対象です。
+
+公証 credential は、`NOTARY_APPLE_ID` / `NOTARY_TEAM_ID` / `NOTARY_APP_PASSWORD` の 3 つがそろっていれば `.env` 直指定を優先します。秘密情報を `.env` に置きたくない場合は、これらを空のままにして `NOTARY_PROFILE` を設定してください。
+
+## 1) 一発実行する
 
 ```bash
-codesign --force --deep --options runtime --timestamp \
-  --sign "$DEVELOPER_IDENTITY" \
-  "$APP_PATH"
-codesign --verify --deep --strict "$APP_PATH"
+./Scripts/release_dmg.zsh
 ```
-署名後に `tccutil reset Accessibility com.__APP_NAME__.app` を実行すると、テスト端末でアクセシビリティ権限を付け直せます。
 
-## STEP4: DMG を生成
+このコマンドは以下を順番に実行します。
+
+1. `xcodegen generate`
+2. Release ビルド
+3. `.app` への codesign
+4. `.app` の notarization / staple / validate / `spctl`
+5. DMG 作成
+6. `.dmg` への codesign
+7. `.dmg` の notarization / staple / validate / `spctl`
+8. 最終 DMG をマウントし、内包 `.app` の staple / `spctl` を再検証
+
+出力先は既定で `dist/__APP_NAME__-<version>.dmg` です。実際のファイル名は `.app` の `CFBundleName` と `CFBundleShortVersionString` から決まります。
+
+## よく使うオプション
+
+既存の `.app` を使う場合:
 
 ```bash
-mkdir -p "$DIST_DIR"
-export VERSION=$(defaults read "$APP_PATH/Contents/Info" CFBundleShortVersionString)
-export DMG_PATH="$DIST_DIR/${APP_NAME}-${VERSION}.dmg"
-rm -f "$DMG_PATH"  # 既存 DMG があれば削除
-create-dmg \
-  --volname "$APP_NAME" \
-  --window-pos 200 120 \
-  --window-size 540 360 \
-  --icon-size 128 \
-  --app-drop-link 400 200 \
-  "$DMG_PATH" \
-  "$APP_PATH"
+./Scripts/release_dmg.zsh --skip-build --app-path build/Build/Products/Release/__APP_NAME__.app
 ```
-`rm -f "$DMG_PATH"` で同名ファイルを先に削除したうえで `create-dmg` を実行することで、`--overwrite` オプションが無い環境でも確実に再生成できます。背景画像や配置を変更したい場合は `create-dmg` のオプションを調整してください。
 
-## STEP5: notarytool で公証
-
-Apple ID 認証を直接使う場合は下記を実行します。
+署名済み `.app` から DMG だけ作り直す場合:
 
 ```bash
-xcrun notarytool submit "$DMG_PATH" \
-  --apple-id "$NOTARY_APPLE_ID" \
-  --team-id "$NOTARY_TEAM_ID" \
-  --password "$NOTARY_APP_PASSWORD" \
-  --wait
+./Scripts/release_dmg.zsh --skip-build --skip-sign --skip-notarize --app-path build/Build/Products/Release/__APP_NAME__.app
 ```
 
-keychain profile を利用したい場合は、最初に1回だけ資格情報を保存します。
+DMG 作成だけを実行する場合:
 
 ```bash
-xcrun notarytool store-credentials "$NOTARY_KEYCHAIN_PROFILE" \
-  --apple-id "$NOTARY_APPLE_ID" \
-  --team-id "$NOTARY_TEAM_ID" \
-  --password "$NOTARY_APP_PASSWORD"
-xcrun notarytool submit "$DMG_PATH" \
-  --keychain-profile "$NOTARY_KEYCHAIN_PROFILE" \
-  --wait
+./Scripts/make_dmg.zsh --app-path build/Build/Products/Release/__APP_NAME__.app
 ```
-`store-credentials` を一度完了させれば、次回以降は下記 1 コマンドだけで提出できます。
+
+## ローカルで公証
+
+`Scripts/release_dmg.zsh` は、`.app` を単体で公証・staple してから DMG へ入れ、DMG 作成後に同じ `CODESIGN_IDENTITY` で DMG 自体へ署名してから DMG も公証します。最後に完成した DMG を読み取り専用でマウントし、中の `.app` に対しても `stapler validate` と `spctl --type execute` を実行します。
+
+DMG だけを個別に公証する場合:
 
 ```bash
-xcrun notarytool submit "$DMG_PATH" \
-  --keychain-profile "$NOTARY_KEYCHAIN_PROFILE" \
-  --wait
+./Scripts/notarize_local.zsh dist/__APP_NAME__-<version>.dmg
 ```
 
-`Status: Accepted` が表示されれば公証完了です。失敗した場合はログ内の `id:` を `xcrun notarytool log <RequestID>` で調査します。
-
-## STEP6: ステープルと Gatekeeper 評価
+keychain profile を使う場合は、最初に 1 回だけ credential を保存します。
 
 ```bash
-xcrun stapler staple "$DMG_PATH" && \
-spctl --assess --type open --context context:primary-signature "$DMG_PATH"
+xcrun notarytool store-credentials "__APP_NAME__Notary" \
+  --apple-id "<apple-id@example.com>" \
+  --team-id "<TEAM ID>" \
+  --password "<app-specific-password>"
 ```
-`&&` で連結しているため、ステープル成功後に直ちに Gatekeeper 評価が走ります。`source=Notarized Developer ID` が表示されれば DMG そのものに公証チケットが埋め込まれ、公証済みであることが確認できます。
 
-`spctl` が `rejected`/`Insufficient Context` を返す場合は、DMG に問題があるとは限りません。以下のいずれかで DMG への公証チケットが有効であることを確認できます。
+作成後は `.env` に以下を設定します。
 
 ```bash
-xcrun stapler validate "$DMG_PATH"
+NOTARY_APPLE_ID=""
+NOTARY_TEAM_ID=""
+NOTARY_APP_PASSWORD=""
+NOTARY_PROFILE="__APP_NAME__Notary"
 ```
 
-`The validate action worked!` と表示されれば DMG へのステープル（公証チケット埋め込み）が有効であることを確認できます。
-
-もしくは、DMG をマウントしてアプリ本体を検証します。
+profile の有効性は次のコマンドで確認できます。
 
 ```bash
-hdiutil attach "$DMG_PATH" -nobrowse && \
-spctl --assess --type open --context context:primary-signature -v "/Volumes/$APP_NAME/$APP_NAME.app" && \
-hdiutil detach "/Volumes/$APP_NAME"
+xcrun notarytool history --keychain-profile "__APP_NAME__Notary"
 ```
-`xcrun stapler validate` で `The validate action worked!` が表示される、またはマウント後の `spctl` で `source=Notarized Developer ID` が得られれば、DMG 内アプリにも公証が適用されており DMG の公証チケットも有効です。
 
-## STEP7: 出力確認
+## 公証をスキップする場合
+
+Apple Developer Program に未加入などで公証できない場合は、DMG 作成だけを行い、テスターへ Gatekeeper の警告（「Apple は悪質なソフトウェアがないことを確認できません」）と回避手順（右クリック→「開く」）を必ず共有してください。
+
+Developer ID 証明書がないローカル検証では、`.env` で `CODESIGN_IDENTITY="-"` を設定し、以下のように公証をスキップします。entitlements がないアプリでは `CODESIGN_ENTITLEMENTS=""` にしてください。
 
 ```bash
-ls -lh "$DMG_PATH"
-shasum -a 256 "$DMG_PATH"
-export INFO_PATH="$DIST_DIR/${APP_NAME}-${VERSION}.txt"
-{
-  echo "DMG Path: $DMG_PATH"
-  echo "Generated: $(date -u '+%Y-%m-%dT%H:%M:%SZ')"
-  ls -lh "$DMG_PATH"
-  shasum -a 256 "$DMG_PATH"
-} | tee "$INFO_PATH"
+./Scripts/release_dmg.zsh --skip-notarize
 ```
-`ls`/`shasum` の結果を表示すると同時に、`dist/${APP_NAME}-${VERSION}.txt` にも保存しておくと配布後の検証が容易になります。
 
-## STEP8: GitHub リリースへアップロード
+## 出力確認
 
-1. GitHub CLI (`gh`) が未導入の場合は `brew install gh` で導入し、`gh auth login` で GitHub アカウントへサインインします。
-2. タグとリリース名を設定してリリースを作成し、DMG とメタ情報テキストを添付します。
+```bash
+ls -lh dist/*.dmg
+shasum -a 256 dist/*.dmg
+```
 
-   ```bash
-   export TAG_NAME="v${VERSION}"
-   export RELEASE_TITLE="__APP_NAME__ ${VERSION}"
-   gh release create "$TAG_NAME" \
-     "$DMG_PATH" "$INFO_PATH" \
-     --title "$RELEASE_TITLE" \
-     --notes "Release notes for ${RELEASE_TITLE}"
-   ```
-
-   既存タグを使う場合は `--draft` で一度下書きを作成し、リリースノートを整備してから公開してください。Web UI でアップロードする場合も、`dist` 配下に生成された DMG と TXT をそのまま添付すれば同等です。
-
-## 公証をスキップせざるを得ない場合
-
-Apple Developer Program に未加入などで公証できない場合でも、上記 STEP4 までを実行して署名付き `.app`/DMG を作成し、テスターへ Gatekeeper の警告（「Apple は悪質なソフトウェアがないことを確認できません」）と回避手順（右クリック→「開く」）を必ず共有してください。
+生成された DMG のサイズと SHA-256 を控えておくと、配布後の検証が容易になります。
 
 ## AI アシスタントに依頼する際の指示テンプレート
 
-1. `cd /Users/workSpace/__APP_NAME__` でリポジトリ直下に移動させる。  
-2. `xcodegen generate` → `xcodebuild ...` → `create-dmg ...` → `xcrun notarytool ...` → `xcrun stapler ...` を順番に実行させ、各ステップのログと生成物を報告させる。  
-3. 公証を省略する場合は理由と回避手順を明記させる。  
-4. 生成された DMG のパス・サイズ・ハッシュの提示も依頼する。
+1. `cd /Users/workSpace/__APP_NAME__` でリポジトリ直下に移動させる。
+2. `.env` の設定が済んでいることを確認させる。
+3. `./Scripts/release_dmg.zsh` を実行させ、各ステップのログと生成物を報告させる。
+4. 公証を省略する場合は理由と回避手順を明記させる。
+5. 生成された DMG のパス・サイズ・ハッシュの提示も依頼する。
