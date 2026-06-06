@@ -8,7 +8,7 @@ RELEASE_COMMON_LOADED=1
 
 typeset -gr RELEASE_COMMON_PATH="${(%):-%N}"
 typeset -gr RELEASE_SCRIPT_DIR="$(cd "$(dirname "${RELEASE_COMMON_PATH}")" >/dev/null 2>&1 && pwd)"
-typeset -gr RELEASE_REPO_ROOT="$(cd "${RELEASE_SCRIPT_DIR}/.." >/dev/null 2>&1 && pwd)"
+typeset -gr RELEASE_REPO_ROOT="$(cd "${RELEASE_SCRIPT_DIR}/../.." >/dev/null 2>&1 && pwd)"
 
 # 手順の切り替わりをログで追いやすくする。
 function release_step() {

@@ -3,12 +3,13 @@
 set -euo pipefail
 setopt null_glob
 
-source "${0:A:h}/release_common.zsh"
+source "${0:A:h}/../release_common.zsh"
+typeset -r RELEASE_DMG_SCRIPT_DIR="${0:A:h}"
 cd "${RELEASE_REPO_ROOT}"
 
 print_usage() {
   cat <<'EOF'
-Usage: ./Scripts/make_dmg.zsh [--app-path <path>] [--output-dir <dir>]
+Usage: ./Scripts/release/dmg/make_dmg.zsh [--app-path <path>] [--output-dir <dir>]
 
 Options:
   --app-path <path>   Target .app path. Falls back to APP_PATH or default Release build output.
@@ -86,7 +87,7 @@ OUT_PATH="$(release_dmg_output_path "${APP_PATH}" "${OUTPUT_DIR}")"
 typeset -a BG_ARGS
 BG_OUTPUT_PATH="${RELEASE_REPO_ROOT}/build/dmg/background@2x.png"
 release_step "DMG 背景を生成します"
-xcrun swift "${RELEASE_SCRIPT_DIR}/generate_dmg_background.swift" "${BG_OUTPUT_PATH}" "${BUNDLE_NAME}"
+xcrun swift "${RELEASE_DMG_SCRIPT_DIR}/generate_dmg_background.swift" "${BG_OUTPUT_PATH}" "${BUNDLE_NAME}"
 BG_ARGS=(--background "${BG_OUTPUT_PATH}")
 
 [[ -f "${OUT_PATH}" ]] && rm -f "${OUT_PATH}"

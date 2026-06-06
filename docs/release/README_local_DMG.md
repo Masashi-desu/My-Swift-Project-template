@@ -1,6 +1,6 @@
 # **__APP_NAME__** ローカルでの DMG 作成 & 公証
 
-このテンプレートでは、DMG 作成と公証に必要な設定をリポジトリ直下の `.env` に寄せます。`.env.example` をコピーして各値を埋めれば、`Scripts/release_dmg.zsh` だけで Release ビルドから公証済み DMG の検証までを実行できます。
+このテンプレートでは、DMG 作成と公証に必要な設定をリポジトリ直下の `.env` に寄せます。`.env.example` をコピーして各値を埋めれば、`Scripts/release/dmg/release_dmg.zsh` だけで Release ビルドから公証済み DMG の検証までを実行できます。
 
 ## 前提条件
 
@@ -34,7 +34,7 @@ cp .env.example .env
 ## 1) 一発実行する
 
 ```bash
-./Scripts/release_dmg.zsh
+./Scripts/release/dmg/release_dmg.zsh
 ```
 
 このコマンドは以下を順番に実行します。
@@ -55,29 +55,29 @@ cp .env.example .env
 既存の `.app` を使う場合:
 
 ```bash
-./Scripts/release_dmg.zsh --skip-build --app-path build/Build/Products/Release/__APP_NAME__.app
+./Scripts/release/dmg/release_dmg.zsh --skip-build --app-path build/Build/Products/Release/__APP_NAME__.app
 ```
 
 署名済み `.app` から DMG だけ作り直す場合:
 
 ```bash
-./Scripts/release_dmg.zsh --skip-build --skip-sign --skip-notarize --app-path build/Build/Products/Release/__APP_NAME__.app
+./Scripts/release/dmg/release_dmg.zsh --skip-build --skip-sign --skip-notarize --app-path build/Build/Products/Release/__APP_NAME__.app
 ```
 
 DMG 作成だけを実行する場合:
 
 ```bash
-./Scripts/make_dmg.zsh --app-path build/Build/Products/Release/__APP_NAME__.app
+./Scripts/release/dmg/make_dmg.zsh --app-path build/Build/Products/Release/__APP_NAME__.app
 ```
 
 ## ローカルで公証
 
-`Scripts/release_dmg.zsh` は、`.app` を単体で公証・staple してから DMG へ入れ、DMG 作成後に同じ `CODESIGN_IDENTITY` で DMG 自体へ署名してから DMG も公証します。最後に完成した DMG を読み取り専用でマウントし、中の `.app` に対しても `stapler validate` と `spctl --type execute` を実行します。
+`Scripts/release/dmg/release_dmg.zsh` は、`.app` を単体で公証・staple してから DMG へ入れ、DMG 作成後に同じ `CODESIGN_IDENTITY` で DMG 自体へ署名してから DMG も公証します。最後に完成した DMG を読み取り専用でマウントし、中の `.app` に対しても `stapler validate` と `spctl --type execute` を実行します。
 
 DMG だけを個別に公証する場合:
 
 ```bash
-./Scripts/notarize_local.zsh dist/__APP_NAME__-<version>.dmg
+./Scripts/release/dmg/notarize_local.zsh dist/__APP_NAME__-<version>.dmg
 ```
 
 keychain profile を使う場合は、最初に 1 回だけ credential を保存します。
@@ -111,7 +111,7 @@ Apple Developer Program に未加入などで公証できない場合は、DMG �
 Developer ID 証明書がないローカル検証では、`.env` で `CODESIGN_IDENTITY="-"` を設定し、以下のように公証をスキップします。entitlements がないアプリでは `CODESIGN_ENTITLEMENTS=""` にしてください。
 
 ```bash
-./Scripts/release_dmg.zsh --skip-notarize
+./Scripts/release/dmg/release_dmg.zsh --skip-notarize
 ```
 
 ## 出力確認
@@ -127,6 +127,6 @@ shasum -a 256 dist/*.dmg
 
 1. `cd /Users/workSpace/__APP_NAME__` でリポジトリ直下に移動させる。
 2. `.env` の設定が済んでいることを確認させる。
-3. `./Scripts/release_dmg.zsh` を実行させ、各ステップのログと生成物を報告させる。
+3. `./Scripts/release/dmg/release_dmg.zsh` を実行させ、各ステップのログと生成物を報告させる。
 4. 公証を省略する場合は理由と回避手順を明記させる。
 5. 生成された DMG のパス・サイズ・ハッシュの提示も依頼する。

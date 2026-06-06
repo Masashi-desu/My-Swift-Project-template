@@ -2,12 +2,12 @@
 
 set -euo pipefail
 
-source "${0:A:h}/release_common.zsh"
+source "${0:A:h}/../release_common.zsh"
 cd "${RELEASE_REPO_ROOT}"
 
 print_usage() {
   cat <<'EOF'
-Usage: ./Scripts/notarize_local.zsh [--skip-staple] [--skip-validate] <path-to-app-or-dmg>
+Usage: ./Scripts/release/dmg/notarize_local.zsh [--skip-staple] [--skip-validate] <path-to-app-or-dmg>
 
 Options:
   --skip-staple      Skip stapler staple after notarization.

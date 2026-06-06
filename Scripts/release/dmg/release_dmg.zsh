@@ -2,12 +2,13 @@
 
 set -euo pipefail
 
-source "${0:A:h}/release_common.zsh"
+source "${0:A:h}/../release_common.zsh"
+typeset -r RELEASE_DMG_SCRIPT_DIR="${0:A:h}"
 cd "${RELEASE_REPO_ROOT}"
 
 print_usage() {
   cat <<'EOF'
-Usage: ./Scripts/release_dmg.zsh [options]
+Usage: ./Scripts/release/dmg/release_dmg.zsh [options]
 
 Options:
   --app-path <path>   Reuse an existing .app instead of the default Release build output.
@@ -131,7 +132,7 @@ function notarize_app_bundle() {
   release_step "アプリ単体の公証用 ZIP を作成します"
   ditto -c -k --keepParent "${app_path}" "${archive_path}"
 
-  "${RELEASE_SCRIPT_DIR}/notarize_local.zsh" --skip-staple --skip-validate "${archive_path}"
+  "${RELEASE_DMG_SCRIPT_DIR}/notarize_local.zsh" --skip-staple --skip-validate "${archive_path}"
 
   release_step "アプリへ公証チケットを付与します"
   xcrun stapler staple "${app_path}"
@@ -276,7 +277,7 @@ typeset -a NOTARIZE_ARGS
 MAKE_DMG_ARGS=(--app-path "${APP_PATH}" --output-dir "${OUTPUT_DIR}")
 NOTARIZE_ARGS=("${DMG_PATH}")
 
-"${RELEASE_SCRIPT_DIR}/make_dmg.zsh" "${MAKE_DMG_ARGS[@]}"
+"${RELEASE_DMG_SCRIPT_DIR}/make_dmg.zsh" "${MAKE_DMG_ARGS[@]}"
 
 if [[ "${SKIP_NOTARIZE}" -ne 1 ]]; then
   sign_dmg "${DMG_PATH}"
@@ -287,7 +288,7 @@ elif [[ "${SKIP_SIGN}" -ne 1 && "${CODESIGN_IDENTITY}" != "-" ]]; then
 fi
 
 if [[ "${SKIP_NOTARIZE}" -ne 1 ]]; then
-  "${RELEASE_SCRIPT_DIR}/notarize_local.zsh" "${NOTARIZE_ARGS[@]}"
+  "${RELEASE_DMG_SCRIPT_DIR}/notarize_local.zsh" "${NOTARIZE_ARGS[@]}"
   verify_app_inside_dmg "${DMG_PATH}" "$(basename "${APP_PATH}")"
 fi
 

@@ -1,0 +1,141 @@
+name: Release from dev
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+    inputs:
+      base_ref:
+        description: "Release comparison base ref"
+        required: false
+        default: "origin/main"
+      head_ref:
+        description: "Release comparison head ref"
+        required: false
+        default: "origin/dev"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-main
+  cancel-in-progress: false
+
+env:
+  RELEASE_APP_NAME: ${{ vars.RELEASE_APP_NAME || '__APP_NAME__' }}
+
+jobs:
+  release:
+    name: Publish tested DMG to GitHub Releases
+    # Template safety switch:
+    # Keep the leading boolean literal false while this repository is only a
+    # template. Change only that false to true in an actual app repository when
+    # main pushes should create tags and GitHub Releases.
+    # `github.repository != ''` is always true during Actions runs; it keeps
+    # linters from treating this as a constant condition.
+    if: ${{ false && github.repository != '' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Fetch long-lived branches and tags
+        run: |
+          git fetch origin \
+            +refs/heads/main:refs/remotes/origin/main \
+            +refs/heads/dev:refs/remotes/origin/dev \
+            --tags
+
+      - name: Check dev/main release policy
+        id: release_meta
+        env:
+          BASE_REF: ${{ github.event_name == 'push' && github.event.before || inputs.base_ref }}
+          HEAD_REF: ${{ github.event_name == 'push' && github.sha || inputs.head_ref }}
+          REQUIRE_HEAD_REF: ${{ github.event_name == 'push' && 'origin/dev' || '' }}
+        run: ./Scripts/release/github/check_release_branch_policy.sh
+
+      - name: Ensure release tag and GitHub release are unused
+        env:
+          RELEASE_TAG: ${{ steps.release_meta.outputs.tag }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if git rev-parse --verify --quiet "refs/tags/${RELEASE_TAG}" >/dev/null; then
+            echo "::error::Release tag already exists: ${RELEASE_TAG}"
+            exit 1
+          fi
+          if gh release view "${RELEASE_TAG}" --repo "${GITHUB_REPOSITORY}" >/dev/null 2>&1; then
+            echo "::error::GitHub Release already exists: ${RELEASE_TAG}"
+            exit 1
+          fi
+
+      - name: Resolve tested dist DMG
+        id: dmg
+        env:
+          VERSION: ${{ steps.release_meta.outputs.version }}
+        run: |
+          dmg_path="dist/${RELEASE_APP_NAME}-${VERSION}.dmg"
+          if [[ ! -f "${dmg_path}" ]]; then
+            echo "::error::Tested DMG is missing: ${dmg_path}"
+            find dist -maxdepth 2 -type f -print || true
+            exit 1
+          fi
+          git ls-files --error-unmatch "${dmg_path}" >/dev/null
+          dmg_sha256="$(shasum -a 256 "${dmg_path}" | awk '{print $1}')"
+          echo "${dmg_sha256}  ${dmg_path}"
+          echo "path=${dmg_path}" >> "${GITHUB_OUTPUT}"
+          echo "sha256=${dmg_sha256}" >> "${GITHUB_OUTPUT}"
+
+      - name: Upload DMG artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.RELEASE_APP_NAME }}-${{ steps.release_meta.outputs.version }}-${{ steps.release_meta.outputs.build }}-dmg
+          path: ${{ steps.dmg.outputs.path }}
+          if-no-files-found: error
+
+      - name: Create GitHub release
+        env:
+          RELEASE_TAG: ${{ steps.release_meta.outputs.tag }}
+          VERSION: ${{ steps.release_meta.outputs.version }}
+          BUILD: ${{ steps.release_meta.outputs.build }}
+          DMG_PATH: ${{ steps.dmg.outputs.path }}
+          DMG_SHA256: ${{ steps.dmg.outputs.sha256 }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          release_notes="$(mktemp)"
+          cat > "${release_notes}" <<EOF
+          ${RELEASE_APP_NAME} ${VERSION} (${BUILD})
+
+          - DMG SHA256: ${DMG_SHA256}
+          EOF
+
+          cleanup_release() {
+            status=$?
+            if [[ "${status}" -ne 0 ]]; then
+              gh release delete "${RELEASE_TAG}" \
+                --repo "${GITHUB_REPOSITORY}" \
+                --yes \
+                --cleanup-tag >/dev/null 2>&1 || true
+              git push origin ":refs/tags/${RELEASE_TAG}" >/dev/null 2>&1 || true
+            fi
+            exit "${status}"
+          }
+          trap cleanup_release EXIT
+
+          git tag -a "${RELEASE_TAG}" -m "Release ${RELEASE_TAG}"
+          git push origin "refs/tags/${RELEASE_TAG}"
+          gh release create "${RELEASE_TAG}" "${DMG_PATH}" \
+            --repo "${GITHUB_REPOSITORY}" \
+            --verify-tag \
+            --title "${RELEASE_APP_NAME} ${VERSION} (${BUILD})" \
+            --notes-file "${release_notes}" \
+            --latest
+
+          trap - EXIT
