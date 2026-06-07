@@ -27,7 +27,7 @@ BASE_REF=origin/main HEAD_REF=origin/dev ./Scripts/release/github/check_release_
 ## 2. DMG を dist に作成する
 
 ```sh
-./Scripts/release/dmg/release_dmg.zsh --output-dir dist
+./Scripts/release_dmg.zsh --output-dir dist
 ```
 
 署名、公証、DMG 作成まで完了すると `dist/__APP_NAME__-<MARKETING_VERSION>.dmg` が作成されます。DMG 作成と公証の詳細は `docs/release/README_local_DMG.md` を参照してください。
@@ -39,9 +39,11 @@ BASE_REF=origin/main HEAD_REF=origin/dev ./Scripts/release/github/check_release_
 `dist/` は通常 `.gitignore` 対象なので、リリース対象の DMG だけを `-f` で追加します。
 
 ```sh
-git add -f dist/__APP_NAME__-<MARKETING_VERSION>.dmg
+git add -f dist/*.dmg
 git commit -m "Add tested <MARKETING_VERSION> DMG"
 ```
+
+対象を厳密に絞りたい場合は、`git add -f dist/__APP_NAME__-<MARKETING_VERSION>.dmg` のようにリリース対象 DMG を明示してください。
 
 ## 4. main へ反映する
 

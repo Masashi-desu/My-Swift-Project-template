@@ -142,7 +142,7 @@ git push origin dev:main
 DMG 作成と公証:
 
 ```sh
-./Scripts/release/dmg/release_dmg.zsh --output-dir dist
+./Scripts/release_dmg.zsh --output-dir dist
 ```
 
 生成物は既定で `dist/__APP_NAME__-<version>.dmg` に出力します。詳細は `docs/release/README_local_DMG.md` を参照してください。
@@ -153,7 +153,18 @@ GitHub Release:
 - `dev` を `main` へ fast-forward push します。
 - `.github/workflows/release.yml` が Git tag と GitHub Release を作成します。
 
+```sh
+git add -f dist/*.dmg
+git commit -m "Add tested <MARKETING_VERSION> DMG"
+git push origin dev
+git push origin dev:main
+```
+
 テンプレート初期状態では workflow の release job は明示的に無効化されています。実プロジェクトで有効化する場合は、workflow 内の safety switch を確認してください。
+
+Sparkle appcast / FTP deploy:
+
+Sparkle appcast / FTP deploy は opt-in です。必要な場合だけ `docs/release/README_sparkle_optional.md` を参照してください。
 
 itch.io 公開:
 

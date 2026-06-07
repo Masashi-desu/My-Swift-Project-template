@@ -8,7 +8,7 @@ cd "${RELEASE_REPO_ROOT}"
 
 print_usage() {
   cat <<'EOF'
-Usage: ./Scripts/release/dmg/release_dmg.zsh [options]
+Usage: ./Scripts/release_dmg.zsh [options]
 
 Options:
   --app-path <path>   Reuse an existing .app instead of the default Release build output.
